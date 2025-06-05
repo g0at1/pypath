@@ -70,12 +70,18 @@ def execute_command(stdscr, cmd, current_path):
     new_path = current_path
 
     for part in parts:
-        if part.startswith("cd "):
-            target = part[3:].strip()
-            if os.path.isabs(target):
-                candidate = target
+        if part == "cd" or part.startswith("cd "):
+            if part == "cd":
+                target = os.path.expanduser("~")
             else:
+                target = part[3:].strip()
+                target = os.path.expanduser(target)
+
+            if not os.path.isabs(target):
                 candidate = os.path.normpath(os.path.join(new_path, target))
+            else:
+                candidate = target
+
             if os.path.isdir(candidate):
                 new_path = candidate
             else:
@@ -112,11 +118,11 @@ def find_autocomplete_suggestion(buffer, current_path):
     try:
         entries = os.listdir(search_dir)
     except Exception:
-        return partial, "", False
+        return raw, "", False
 
     candidates = [e for e in entries if e.startswith(partial)]
     if not candidates:
-        return partial, "", False
+        return raw, "", False
 
     if len(candidates) == 1:
         single = candidates[0]
@@ -124,11 +130,11 @@ def find_autocomplete_suggestion(buffer, current_path):
         fullpath = os.path.join(search_dir, single)
         if os.path.isdir(fullpath):
             rest += "/"
-        return partial, rest, os.path.isdir(fullpath)
+        return raw, rest, os.path.isdir(fullpath)
 
     common = os.path.commonprefix(candidates)
     rest = common[len(partial) :]
-    return partial, rest, False
+    return raw, rest, False
 
 
 def draw_directory(stdscr, current_path, selected, command_mode=False, cmd_buffer=""):

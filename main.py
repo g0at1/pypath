@@ -6,6 +6,117 @@ import pwd
 import grp
 import time
 import subprocess
+import re
+
+
+def show_output_curses(stdscr, output_text, title="Output"):
+    h, w = stdscr.getmaxyx()
+    win_h = int(h * 0.8)
+    win_w = int(w * 0.8)
+    win_y = (h - win_h) // 2
+    win_x = (w - win_w) // 2
+
+    win = curses.newwin(win_h, win_w, win_y, win_x)
+    win.bkgd(" ", curses.color_pair(5))
+    win.box()
+
+    title_str = f" {title} "
+    win.addstr(0, 2, title_str, curses.A_BOLD)
+
+    lines = output_text.splitlines()
+    max_lines = win_h - 4
+    offset = 0
+
+    while True:
+        win.erase()
+        win.box()
+        win.addstr(0, 2, title_str, curses.A_BOLD)
+
+        section = None
+        line_index = 0
+        for idx in range(offset, min(offset + max_lines, len(lines))):
+            raw = lines[idx]
+
+            if raw.startswith("Changes to be committed"):
+                section = "staged"
+                win.addstr(1 + line_index, 2, raw[: win_w - 4], curses.A_DIM)
+                line_index += 1
+                continue
+            elif raw.startswith("Changes not staged for commit"):
+                section = "unstaged"
+                win.addstr(1 + line_index, 2, raw[: win_w - 4], curses.A_DIM)
+                line_index += 1
+                continue
+            elif raw.strip().startswith("(use ") and (
+                section in ("staged", "unstaged")
+            ):
+                win.addstr(1 + line_index, 2, raw[: win_w - 4], curses.A_DIM)
+                line_index += 1
+                continue
+
+            hunk = re.search(r"\s*@@.*?@@", raw)
+            if hunk:
+                y = 1 + line_index
+                x = 2
+                start, end = hunk.span()
+                pre = raw[:start]
+                mid = raw[start:end]
+                post = raw[end : win_w - 4]
+
+                win.addstr(y, x, pre)
+                x += len(pre)
+
+                win.addstr(y, x, mid, curses.color_pair(1))
+                x += len(mid)
+
+                win.addstr(y, x, post)
+                line_index += 1
+                continue
+
+            elif raw.startswith("+++ ") or raw.startswith("--- "):
+                color = curses.A_BOLD
+            elif raw.startswith("+"):
+                color = curses.color_pair(6)
+            elif raw.startswith("-") and not raw.startswith("--- "):
+                color = curses.color_pair(3)
+            else:
+                if section == "staged":
+                    color = curses.color_pair(6)
+                elif section == "unstaged":
+                    color = curses.color_pair(3)
+                else:
+                    color = curses.A_BOLD
+
+            win.addstr(1 + line_index, 2, raw[: win_w - 4], color)
+            line_index += 1
+
+        footer = "<Click Q to exit>"
+        win.addstr(win_h - 2, 2, footer[: win_w - 4], curses.A_DIM)
+        win.refresh()
+
+        key = win.getch()
+        if key == ord("q"):
+            break
+        elif key == curses.KEY_DOWN or key == ord("j"):
+            if offset + max_lines < len(lines):
+                offset += 1
+        elif key == curses.KEY_UP or key == ord("k"):
+            if offset > 0:
+                offset -= 1
+        elif key == curses.KEY_NPAGE:
+            offset = min(offset + max_lines, len(lines) - max_lines)
+        elif key == curses.KEY_PPAGE:
+            offset = max(offset - max_lines, 0)
+        elif key == ord("g"):
+            offset = 0
+        elif key == ord("G"):
+            offset = max(len(lines) - max_lines, 0)
+
+    win.erase()
+    win.refresh()
+    del win
+    stdscr.clear()
+    stdscr.refresh()
 
 
 def format_mode(mode):
@@ -92,11 +203,27 @@ def execute_command(stdscr, cmd, current_path):
                 _show_error_curses(stdscr, msg)
         else:
             try:
-                ret = subprocess.call(part, shell=True, cwd=new_path)
-                if ret != 0:
-                    msg = f"Command '{part}' returned code {ret}."
-                    curses.flash()
-                    _show_error_curses(stdscr, msg)
+                env_override = os.environ.copy()
+                env_override["GIT_PAGER"] = "cat"
+                proc = subprocess.Popen(
+                    part,
+                    shell=True,
+                    cwd=new_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                out, err = proc.communicate()
+                full_output = ""
+                if out:
+                    full_output += out
+                if err:
+                    full_output += ("\n" if full_output else "") + err
+                if proc.returncode != 0:
+                    full_output += f"\n\n(Return code: {proc.returncode})"
+
+                if full_output.strip():
+                    show_output_curses(stdscr, full_output, title=part)
             except Exception as e:
                 msg = f"Error while executing '{part}': {e}"
                 curses.flash()
@@ -420,6 +547,7 @@ def draw_preview(stdscr, current_path, name, start_x, width, height):
 
 
 def main(stdscr):
+    stdscr.keypad(True)
     curses.curs_set(0)
     curses.start_color()
     curses.use_default_colors()
@@ -428,6 +556,7 @@ def main(stdscr):
     curses.init_pair(3, curses.COLOR_RED, -1)
     curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(6, curses.COLOR_GREEN, -1)
 
     current_path = os.getcwd()
     selected = 0
@@ -533,7 +662,7 @@ def main(stdscr):
                         lambda scr: _show_error_curses(scr, f"Exception: {e}")
                     )
 
-        elif key == ord("c"):
+        elif key == ord("c") or key == ord(":"):
             command_mode = True
             cmd_buffer = ""
             stdscr.clear()

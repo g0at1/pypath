@@ -7,11 +7,104 @@ import grp
 import time
 import subprocess
 import re
+import shutil
 from git import Repo
 from git.exc import InvalidGitRepositoryError
 
 _cached_path = None
 _cached_branch = None
+
+
+def prompt_string(stdscr, title, prompt_text):
+    curses.noecho()
+    h, w = stdscr.getmaxyx()
+    box_width = max(len(prompt_text), len(title)) + 50
+    win = curses.newwin(3, box_width, h // 2 - 1, (w - box_width) // 2)
+    win.bkgd(" ", curses.color_pair(5))
+    win.box()
+    win.addstr(0, 2, f" {title} ", curses.A_BOLD)
+    win.addstr(1, 2, prompt_text)
+    win.refresh()
+    curses.curs_set(1)
+    input_win = curses.newwin(
+        1,
+        box_width - len(prompt_text) - 4,
+        h // 2,
+        (w - box_width) // 2 + len(prompt_text) + 2,
+    )
+    buffer = ""
+    while True:
+        ch = input_win.getch()
+        if ch in (10, 13):  # Enter
+            break
+        if ch == 27:  # ESC
+            buffer = None
+            break
+        if ch in (curses.KEY_BACKSPACE, 127, 8):
+            if buffer:
+                buffer = buffer[:-1]
+                y, x = input_win.getyx()
+                input_win.delch(y, x - 1)
+        else:
+            try:
+                c = chr(ch)
+                if c.isprintable():
+                    buffer += c
+                    input_win.addstr(c)
+            except:
+                pass
+    curses.curs_set(0)
+    win.clear()
+    win.refresh()
+    return buffer
+
+
+def create_entity(stdscr, current_path):
+    name = prompt_string(
+        stdscr, "Create", "Name: "
+    )
+    if name is None:
+        return None
+    full = os.path.join(current_path, name)
+    try:
+        if os.path.splitext(name)[1]:
+            open(full, "w").close()
+        else:
+            os.mkdir(full)
+        return name
+    except Exception as e:
+        _show_error_curses(stdscr, f"Error: {e}")
+        return None
+
+
+def rename_entity(stdscr, current_path, entries, selected):
+    old = entries[selected]
+    new = prompt_string(stdscr, "Rename", f"Rename '{old}' to: ")
+    if new is None:
+        return None
+    full_old = os.path.join(current_path, old)
+    full_new = os.path.join(current_path, new)
+    try:
+        os.rename(full_old, full_new)
+        return new
+    except Exception as e:
+        _show_error_curses(stdscr, f"Error: {e}")
+        return None
+
+
+def delete_entity(stdscr, current_path, entries, selected):
+    name = entries[selected]
+    confirm = prompt_string(stdscr, "Delete", f"Delete '{name}'? [y/N]: ")
+    if confirm is None or not confirm.lower().startswith("y"):
+        return
+    full = os.path.join(current_path, name)
+    try:
+        if os.path.isdir(full) and not os.path.islink(full):
+            shutil.rmtree(full)
+        else:
+            os.remove(full)
+    except Exception as e:
+        _show_error_curses(stdscr, f"Error deleting '{name}': {e}")
 
 
 def get_branch_for_path(path):
@@ -668,6 +761,41 @@ def main(stdscr):
                 continue
 
         key = stdscr.getch()
+        if key == ord("a"):
+            new_item = create_entity(stdscr, current_path)
+            if new_item:
+                entries = [".."] + sorted(os.listdir(current_path))
+                if new_item in entries:
+                    selected = entries.index(new_item)
+            stdscr.clear()
+            continue
+
+        if key == ord("A"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            if selected < len(entries):
+                target = entries[selected]
+                full_target = os.path.join(current_path, target)
+                if os.path.isdir(full_target) and target not in (".", ".."):
+                    new_item = create_entity(stdscr, full_target)
+                    # keep selection on original directory
+            stdscr.clear()
+            continue
+
+        if key == ord("r"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            new_name = rename_entity(stdscr, current_path, entries, selected)
+            if new_name:
+                entries = [".."] + sorted(os.listdir(current_path))
+                if new_name in entries:
+                    selected = entries.index(new_name)
+            stdscr.clear()
+            continue
+
+        if key == ord("d"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            delete_entity(stdscr, current_path, entries, selected)
+            stdscr.clear()
+            continue
 
         if (key == curses.KEY_UP or key == ord("k")) and selected > 0:
             selected -= 1

@@ -60,9 +60,7 @@ def prompt_string(stdscr, title, prompt_text):
 
 
 def create_entity(stdscr, current_path):
-    name = prompt_string(
-        stdscr, "Create", "Name: "
-    )
+    name = prompt_string(stdscr, "Create", "Name: ")
     if name is None:
         return None
     full = os.path.join(current_path, name)
@@ -302,9 +300,13 @@ def _show_error_curses(stdscr, message):
 
 def execute_command(stdscr, cmd, current_path):
     parts = [p.strip() for p in cmd.split(";") if p.strip()]
+    global _cached_path, _cached_branch
     new_path = current_path
 
     for part in parts:
+        if part.startswith("git checkout"):
+            _cached_path = None
+            _cached_branch = None
         if part == "cd" or part.startswith("cd "):
             if part == "cd":
                 target = os.path.expanduser("~")

@@ -634,11 +634,10 @@ def main(stdscr):
                 try:
                     ch = chr(key)
                     if ch.isprintable():
-                        if ch.isprintable():
-                            cmd_buffer += ch
-                            new_sel = update_selection_from_regex(cmd_buffer, entries)
-                            if new_sel is not None:
-                                selected = new_sel
+                        cmd_buffer += ch
+                        new_sel = update_selection_from_regex(cmd_buffer, entries)
+                        if new_sel is not None:
+                            selected = new_sel
                 except:
                     pass
                 continue

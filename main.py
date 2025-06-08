@@ -7,6 +7,8 @@ import grp
 import time
 import subprocess
 import re
+from git import Repo
+from git.exc import InvalidGitRepositoryError
 
 
 def update_selection_from_regex(buffer, entries):
@@ -361,6 +363,17 @@ def draw_directory(stdscr, current_path, selected, command_mode=False, cmd_buffe
             stdscr.addstr(screen_y, prefix_len, part_name[:remaining], attr_name)
 
     if command_mode:
+        try:
+            repo = Repo(current_path, search_parent_directories=False)
+            branch = repo.active_branch.name
+        except InvalidGitRepositoryError:
+            branch = None
+
+        if branch:
+            branch_line = f"Branch: {branch}"
+            stdscr.move(h - 3, 0)
+            stdscr.clrtoeol()
+            stdscr.addstr(h - 3, 0, branch_line.ljust(w - 1), curses.A_BOLD)
         pwd_line = f"PWD: {current_path}"
         stdscr.addstr(h - 2, 0, pwd_line[: w - 1])
 

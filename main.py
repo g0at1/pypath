@@ -9,6 +9,18 @@ import subprocess
 import re
 
 
+def update_selection_from_regex(buffer, entries):
+    if buffer.startswith("/") and len(buffer) > 1:
+        try:
+            pattern = re.compile(buffer[1:], re.IGNORECASE)
+            for idx, name in enumerate(entries):
+                if name not in ("..", ".") and pattern.search(name):
+                    return idx
+        except re.error:
+            pass
+    return None
+
+
 def show_output_curses(stdscr, output_text, title="Output"):
     h, w = stdscr.getmaxyx()
     win_h = int(h * 0.8)
@@ -580,6 +592,13 @@ def main(stdscr):
             key = stdscr.getch()
 
             if key in (curses.KEY_ENTER, 10, 13):
+                if cmd_buffer.startswith("/"):
+                    cmd_buffer = ""
+                    command_mode = False
+                    stdscr.clear()
+                    curses.curs_set(0)
+                    continue
+
                 current_path = execute_command(stdscr, cmd_buffer, current_path)
                 cmd_buffer = ""
                 command_mode = False
@@ -598,6 +617,9 @@ def main(stdscr):
             elif key in (curses.KEY_BACKSPACE, 127, 8):
                 if len(cmd_buffer) > 0:
                     cmd_buffer = cmd_buffer[:-1]
+                    new_sel = update_selection_from_regex(cmd_buffer, entries)
+                    if new_sel is not None:
+                        selected = new_sel
                 continue
 
             elif key == 9:
@@ -612,7 +634,11 @@ def main(stdscr):
                 try:
                     ch = chr(key)
                     if ch.isprintable():
-                        cmd_buffer += ch
+                        if ch.isprintable():
+                            cmd_buffer += ch
+                            new_sel = update_selection_from_regex(cmd_buffer, entries)
+                            if new_sel is not None:
+                                selected = new_sel
                 except:
                     pass
                 continue
@@ -662,9 +688,9 @@ def main(stdscr):
                         lambda scr: _show_error_curses(scr, f"Exception: {e}")
                     )
 
-        elif key == ord("c") or key == ord(":"):
+        elif key == ord("c") or key == ord(":") or key == ord("/"):
             command_mode = True
-            cmd_buffer = ""
+            cmd_buffer = "" if key != ord("/") else "/"
             stdscr.clear()
             curses.curs_set(1)
             continue

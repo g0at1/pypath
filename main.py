@@ -8,11 +8,80 @@ import time
 import subprocess
 import re
 import shutil
+import textwrap
 from git import Repo
 from git.exc import InvalidGitRepositoryError
 
 _cached_path = None
 _cached_branch = None
+_clipboard = {
+    "path": None,
+    "cut": False,
+}
+
+
+def copy_entity(stdscr, current_path, entries, selected):
+    name = entries[selected]
+    full = os.path.join(current_path, name)
+    _clipboard["path"] = full
+    _clipboard["cut"] = False
+    _show_status(stdscr, f"Copied: {name}")
+
+
+def cut_entity(stdscr, current_path, entries, selected):
+    name = entries[selected]
+    full = os.path.join(current_path, name)
+    _clipboard["path"] = full
+    _clipboard["cut"] = True
+    _show_status(stdscr, f"Cut: {name}")
+
+
+def paste_entity(stdscr, current_path):
+    src = _clipboard.get("path")
+    if not src:
+        _show_status(stdscr, "Clipboard is empty.")
+        return
+
+    base = os.path.basename(src.rstrip(os.sep))
+    name, ext = os.path.splitext(base)
+
+    if _clipboard["cut"]:
+        paste_name = base
+    else:
+        paste_name = f"{name}-copy{ext}"
+
+    dest = os.path.join(current_path, paste_name)
+
+    try:
+        if _clipboard["cut"]:
+            shutil.move(src, dest)
+            msg = f"Moved: {paste_name} -> {current_path}"
+        else:
+            if os.path.isdir(src):
+                shutil.copytree(src, dest)
+            else:
+                shutil.copy2(src, dest)
+            msg = f"Copied: {paste_name} into {current_path}"
+
+        if _clipboard["cut"]:
+            _clipboard["path"] = None
+            _clipboard["cut"] = False
+
+        _show_status(stdscr, msg)
+
+    except Exception as e:
+        _show_error_curses(stdscr, f"Error while pasting: {e}")
+
+
+def _show_status(stdscr, message, duration=1.5):
+    h, w = stdscr.getmaxyx()
+    stdscr.attron(curses.A_BOLD)
+    stdscr.addstr(h - 1, 0, message[: w - 1].ljust(w - 1))
+    stdscr.attroff(curses.A_BOLD)
+    stdscr.refresh()
+    time.sleep(duration)
+    stdscr.addstr(h - 1, 0, " " * (w - 1))
+    stdscr.refresh()
 
 
 def prompt_string(stdscr, title, prompt_text):
@@ -276,9 +345,16 @@ def human_readable(size_bytes):
 
 def _show_error_curses(stdscr, message):
     h, w = stdscr.getmaxyx()
-    lines = message.split("\n")
-    box_w = max(len(line) for line in lines) + 4
-    box_h = len(lines) + 4
+
+    raw_lines = message.split("\n")
+    wrapped = []
+    max_msg_w = w - 6
+    for ln in raw_lines:
+        wrapped.extend(textwrap.wrap(ln, max_msg_w) or [""])
+    lines = wrapped
+
+    box_w = min(max(len(l) for l in lines) + 4, w)
+    box_h = min(len(lines) + 4, h)
     box_y = max((h - box_h) // 2, 0)
     box_x = max((w - box_w) // 2, 0)
 
@@ -854,6 +930,17 @@ def main(stdscr):
             stdscr.clear()
             curses.curs_set(0)
             continue
+        elif key == ord("C"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            if selected < len(entries):
+                copy_entity(stdscr, current_path, entries, selected)
+        elif key == ord("X"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            if selected < len(entries):
+                cut_entity(stdscr, current_path, entries, selected)
+        elif key == ord("P"):
+            paste_entity(stdscr, current_path)
+            entries = [".."] + sorted(os.listdir(current_path))
 
         elif key == ord("q"):
             break

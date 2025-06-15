@@ -771,6 +771,9 @@ def main(stdscr):
     command_mode = False
     cmd_buffer = ""
     preview_mode = False
+    last_search = None
+    search_matches = []
+    current_match_idx = -1
 
     while True:
         if preview_mode:
@@ -789,18 +792,32 @@ def main(stdscr):
 
             if key in (curses.KEY_ENTER, 10, 13):
                 if cmd_buffer.startswith("/"):
-                    cmd_buffer = ""
-                    command_mode = False
-                    stdscr.clear()
-                    curses.curs_set(0)
-                    continue
-
-                current_path = execute_command(stdscr, cmd_buffer, current_path)
+                    pattern = cmd_buffer[1:]
+                    try:
+                        regex = re.compile(pattern, re.IGNORECASE)
+                        raw = os.listdir(current_path)
+                        entries = [".."] + sorted(raw)
+                        search_matches = [
+                            idx
+                            for idx, name in enumerate(entries)
+                            if name not in ("..", ".") and regex.search(name)
+                        ]
+                        if search_matches:
+                            last_search = pattern
+                            current_match_idx = 0
+                            selected = search_matches[0]
+                        else:
+                            last_search = None
+                            _show_status(stdscr, "No matches", duration=1.0)
+                    except re.error:
+                        _show_status(stdscr, "Invalid regex", duration=1.0)
+                else:
+                    current_path = execute_command(stdscr, cmd_buffer, current_path)
                 cmd_buffer = ""
                 command_mode = False
                 stdscr.clear()
                 curses.curs_set(0)
-                selected = 0
+                stdscr.clear()
                 continue
 
             elif key == 27:  # ESC
@@ -839,6 +856,18 @@ def main(stdscr):
                 continue
 
         key = stdscr.getch()
+        if last_search and key in (ord("n"), ord("N")):
+            if not search_matches:
+                _show_status(stdscr, "No matches", duration=1.0)
+            else:
+                if key == ord("n"):
+                    current_match_idx = (current_match_idx + 1) % len(search_matches)
+                else:
+                    current_match_idx = (current_match_idx - 1) % len(search_matches)
+                selected = search_matches[current_match_idx]
+                stdscr.clear()
+                continue
+
         if key == ord("a"):
             new_item = create_entity(stdscr, current_path)
             if new_item:

@@ -11,6 +11,7 @@ import shutil
 import textwrap
 from git import Repo
 from git.exc import InvalidGitRepositoryError
+import sys
 
 _cached_path = None
 _cached_branch = None
@@ -932,6 +933,15 @@ def main(stdscr):
             else:
                 try:
                     curses.endwin()
+                    if os.environ.get("PYPATH_MODE") == "neovim":
+                        cache = os.path.expanduser("~/.pypath_last")
+                        try:
+                            with open(cache, "w", encoding="utf-8") as f:
+                                f.write(full + "\n")
+                        except Exception:
+                            pass
+                        sys.exit(0)
+
                     editor = os.environ.get("EDITOR", "vim")
                     ret = os.system(f"{editor} {full}")
                     if ret != 0:

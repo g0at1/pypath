@@ -21,6 +21,48 @@ _clipboard = {
 }
 
 
+def extract_entity(stdscr, current_path, entries, selected):
+    name = entries[selected]
+    full = os.path.join(current_path, name)
+
+    supported = {
+        ".zip": None,
+        ".tar": "tar",
+        ".gztar": "gztar",
+        ".bztar": "bztar",
+        ".xztar": "xztar",
+    }
+    ext = next((e for e in supported if name.lower().endswith(e)), None)
+    if not ext:
+        _show_status(stdscr, f"Unsupported format: {name}", duration=1.5)
+        return
+
+    base = name[: -len(ext)]
+    dest = os.path.join(current_path, base)
+    if os.path.exists(dest):
+        i = 2
+        while True:
+            candidate = os.path.join(current_path, f"{base} {i}")
+            if not os.path.exists(candidate):
+                dest = candidate
+                break
+            i += 1
+
+    try:
+        shutil.unpack_archive(full, dest, format=supported[ext])
+
+        macosx_dir = os.path.join(dest, "__MACOSX")
+        if os.path.isdir(macosx_dir):
+            shutil.rmtree(macosx_dir)
+
+        _show_status(stdscr, f"Unpacked to: {os.path.basename(dest)}")
+
+    except shutil.ReadError as e:
+        _show_error_curses(stdscr, f"Error while unpacking: {e}")
+    except Exception as e:
+        _show_error_curses(stdscr, f"Unexpected error: {e}")
+
+
 def copy_entity(stdscr, current_path, entries, selected):
     name = entries[selected]
     full = os.path.join(current_path, name)
@@ -980,7 +1022,12 @@ def main(stdscr):
         elif key == ord("P"):
             paste_entity(stdscr, current_path)
             entries = [".."] + sorted(os.listdir(current_path))
-
+        elif key == ord("x"):
+            entries = [".."] + sorted(os.listdir(current_path))
+            if selected < len(entries):
+                extract_entity(stdscr, current_path, entries, selected)
+            stdscr.clear()
+            continue
         elif key == ord("q"):
             break
 

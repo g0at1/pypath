@@ -12,6 +12,7 @@ import textwrap
 from git import Repo
 from git.exc import InvalidGitRepositoryError
 import sys
+from utils.file_icons import FILE_ICONS
 
 _cached_path = None
 _cached_branch = None
@@ -561,37 +562,46 @@ def draw_directory(stdscr, current_path, selected, command_mode=False, cmd_buffe
         name = entries[idx]
         mode_str, nlink, owner, group, size_hr, mtime_str = metadata[name]
         full = os.path.join(current_path, name)
-        display_name = name + ("/" if os.path.isdir(full) else "")
-        screen_y = (idx - offset) + 2
-
-        part_mode = f"{mode_str}"
-        part_nlink = f"{nlink:>3}"
-        part_owner = f"{owner:<8}"
-        part_group = f"{group:<8}"
-        part_size = f"{size_hr:>8}"
-        part_time = f"{mtime_str:>12}"
-        part_name = f" {display_name}"
-        prefix = f"{part_mode} {part_nlink} {part_owner} {part_group} {part_size} {part_time}"
-
-        if idx == selected:
-            attr_prefix = curses.A_REVERSE
-            if os.path.isdir(full):
-                attr_name = curses.color_pair(1) | curses.A_REVERSE
-            else:
-                attr_name = curses.color_pair(2) | curses.A_REVERSE
+        if os.path.isdir(full):
+            icon = FILE_ICONS["folder"]
         else:
-            attr_prefix = curses.A_NORMAL
-            if os.path.isdir(full):
-                attr_name = curses.color_pair(1)
-            else:
-                attr_name = curses.color_pair(2)
+            ext = os.path.splitext(name)[1].lower()
+            icon = FILE_ICONS.get(ext, FILE_ICONS["default_file"])
+        display_name = f"{name}"
 
-        max_width = w - 1
-        stdscr.addstr(screen_y, 0, prefix[:max_width], attr_prefix)
-        prefix_len = min(len(prefix), max_width)
-        if prefix_len < max_width:
-            remaining = max_width - prefix_len
-            stdscr.addstr(screen_y, prefix_len, part_name[:remaining], attr_name)
+        part = (
+            f"{mode_str} {nlink:>3} {owner:<8} {group:<8} {size_hr:>8} "
+            f"{mtime_str:>12}"
+        )
+        prefix_len = min(len(part), w - 1)
+
+        y = (idx - offset) + 2
+        # rysuj prefiks
+        attr = curses.A_REVERSE if idx == selected else curses.A_NORMAL
+        stdscr.addstr(y, 0, part[: w - 1], attr)
+
+        # rysuj ikonę i nazwę
+        space_left = (w - 1) - prefix_len
+        if space_left > 0:
+            # długość " ikonki i spacja "
+            icon_text = f" {icon} "
+            itlen = len(icon_text)
+            # ikona
+            stdscr.addstr(
+                y,
+                prefix_len,
+                icon_text[:space_left],
+                curses.color_pair(1) | (curses.A_REVERSE if idx == selected else 0),
+            )
+            # nazwa
+            name_x = prefix_len + itlen
+            stdscr.addstr(
+                y,
+                name_x,
+                display_name[: max(0, space_left - itlen)],
+                (curses.color_pair(1) if os.path.isdir(full) else curses.color_pair(2))
+                | (curses.A_REVERSE if idx == selected else 0),
+            )
 
     if command_mode:
         branch = get_branch_for_path(current_path)
@@ -808,6 +818,7 @@ def main(stdscr):
     curses.init_pair(4, curses.COLOR_BLACK, curses.COLOR_WHITE)
     curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_BLACK)
     curses.init_pair(6, curses.COLOR_GREEN, -1)
+    curses.init_pair(7, curses.COLOR_MAGENTA, -1)
 
     current_path = os.getcwd()
     selected = 0

@@ -1040,6 +1040,12 @@ def main(stdscr):
             stdscr.clear()
             continue
         elif key == ord("q"):
+            cache = os.path.expanduser("~/.pypath_last_dir")
+            try:
+                with open(cache, "w", encoding="utf-8") as f:
+                    f.write(current_path + "\n")
+            except Exception:
+                pass
             break
 
     curses.endwin()

@@ -57,5 +57,5 @@ FILE_ICONS = {
     ".sql": "",
     ".db": "",
     ".sqlite": "",
-    ".ipynb": "",
+    ".ipynb": ""
 }
